@@ -1,0 +1,45 @@
+name: 🏗️ Build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: 🏗️ Build
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        arch: [x86_64, aarch64]
+        exclude:
+          - os: ubuntu-latest
+            arch: aarch64
+          - os: macos-latest
+            arch: x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Linux x86_64)
+        if: matrix.os == 'ubuntu-latest' && matrix.arch == 'x86_64'
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Build (macOS x86_64)
+        if: matrix.os == 'macos-latest' && matrix.arch == 'x86_64'
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Build (macOS aarch64)
+        if: matrix.os == 'macos-latest' && matrix.arch == 'aarch64'
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotty-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/${{ matrix.arch == 'x86_64' && format('{0}-unknown-linux-gnu',
+            matrix.arch) || '' }}${{ matrix.arch == 'aarch64' &&
+            'aarch64-apple-darwin' || '' }}/release/dotty
