@@ -25,6 +25,12 @@ impl TryFrom<parser::Node> for Link {
     }
 }
 
+impl From<Link> for Step {
+    fn from(link: Link) -> Self {
+        Step::Link(link)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Action {
     pub command: String,
@@ -42,9 +48,16 @@ impl TryFrom<parser::Node> for Action {
     }
 }
 
-pub struct InterpreterResult {
-    pub links: Vec<Link>,
-    pub actions: Vec<Action>,
+impl From<Action> for Step {
+    fn from(action: Action) -> Self {
+        Step::Action(action)
+    }
+}
+
+#[derive(Debug)]
+pub enum Step {
+    Link(Link),
+    Action(Action),
 }
 
 pub struct Environment {
@@ -121,17 +134,16 @@ impl Interpreter {
         }
     }
 
-    pub fn run(&mut self, nodes: Vec<parser::Node>) -> anyhow::Result<InterpreterResult> {
-        let mut links = Vec::new();
-        let mut actions = Vec::new();
+    pub fn run(&mut self, nodes: Vec<parser::Node>) -> anyhow::Result<Vec<Step>> {
+        let mut steps: Vec<Step> = Vec::new();
 
         for node in nodes {
             match node {
                 parser::Node::Link { .. } => {
-                    links.push(Link::try_from(node)?);
+                    steps.push(Link::try_from(node)?.into());
                 }
                 parser::Node::Do { .. } => {
-                    actions.push(Action::try_from(node)?);
+                    steps.push(Action::try_from(node)?.into());
                 }
                 parser::Node::If {
                     condition,
@@ -143,8 +155,7 @@ impl Interpreter {
                     } else {
                         self.run(false_branch)?
                     };
-                    links.extend(result.links);
-                    actions.extend(result.actions);
+                    steps.extend(result);
                 }
                 parser::Node::Print(expr) => {
                     let parser::Value::String(s) = self.evaluate_expression(*expr)?;
@@ -162,7 +173,7 @@ impl Interpreter {
             }
         }
 
-        Ok(InterpreterResult { links, actions })
+        Ok(steps)
     }
 
     fn evaluate_condition(&self, node: parser::Node) -> anyhow::Result<bool> {

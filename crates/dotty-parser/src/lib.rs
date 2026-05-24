@@ -1,14 +1,15 @@
-use crate::interpreter::{Action, Context, Interpreter, Link};
+use crate::interpreter::{Context, Interpreter};
 use crate::parser::Parser;
 
 mod interpreter;
 mod lexer;
 mod parser;
 
-#[derive(Debug, Clone)]
+pub use interpreter::{Action, Link, Step};
+
+#[derive(Debug)]
 pub struct DottyConfig {
-    pub links: Vec<Link>,
-    pub actions: Vec<Action>,
+    pub steps: Vec<Step>,
 }
 
 impl DottyConfig {
@@ -18,11 +19,28 @@ impl DottyConfig {
 
     pub fn parse_with_context(source: &str, context: Context) -> anyhow::Result<Self> {
         let ast = Parser::new(source).parse()?;
-        let result = Interpreter::from_context(context).run(ast)?;
-        Ok(Self {
-            links: result.links,
-            actions: result.actions,
-        })
+        let steps = Interpreter::from_context(context).run(ast)?;
+        Ok(Self { steps })
+    }
+
+    pub fn links(&self) -> Vec<&Link> {
+        self.steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Link(l) => Some(l),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn actions(&self) -> Vec<&Action> {
+        self.steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Action(a) => Some(a),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -49,8 +67,8 @@ mod tests {
         );
         assert!(parsed.is_ok());
         let parsed = parsed.unwrap();
-        assert_eq!(parsed.links.len(), 2);
-        assert_eq!(parsed.actions.len(), 1);
+        assert_eq!(parsed.links().len(), 2);
+        assert_eq!(parsed.actions().len(), 1);
     }
 
     #[test]
@@ -77,8 +95,8 @@ mod tests {
         );
         assert!(parsed.is_ok());
         let parsed = parsed.unwrap();
-        assert_eq!(parsed.links.len(), 1);
-        assert_eq!(parsed.actions.len(), 1);
+        assert_eq!(parsed.links().len(), 1);
+        assert_eq!(parsed.actions().len(), 1);
     }
 
     #[test]
@@ -127,7 +145,7 @@ mod tests {
         let parsed = DottyConfig::parse_with_context(config, ctx);
         assert!(parsed.is_ok(), "{}", parsed.unwrap_err());
         let parsed = parsed.unwrap();
-        assert_eq!(parsed.links.len(), 4);
-        assert_eq!(parsed.actions.len(), 2);
+        assert_eq!(parsed.links().len(), 4);
+        assert_eq!(parsed.actions().len(), 2);
     }
 }
