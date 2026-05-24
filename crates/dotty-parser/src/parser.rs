@@ -145,6 +145,29 @@ impl<TS: TokenStream> Parser<TS> {
     }
 
     fn parse_condition(&mut self) -> anyhow::Result<Node> {
+        let left = self.parse_comparison()?;
+        match self.current_token.clone() {
+            Some(Token::Or) => {
+                self.consume();
+                let right = self.parse_condition()?;
+                Ok(Node::Or {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                })
+            }
+            Some(Token::And) => {
+                self.consume();
+                let right = self.parse_condition()?;
+                Ok(Node::And {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                })
+            }
+            _ => Ok(left),
+        }
+    }
+
+    fn parse_comparison(&mut self) -> anyhow::Result<Node> {
         if let Some(Token::Not) = &self.current_token {
             self.consume();
             let inner = self.parse_atom()?;
@@ -520,6 +543,43 @@ mod tests {
                     value: Value::String("hosts/mac".to_string()),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn it_parses_if_with_or() {
+        let token_stream: TokenList = vec![
+            Token::If,
+            Token::Identifier("os".to_string()),
+            Token::Is,
+            Token::String("linux".to_string()),
+            Token::Or,
+            Token::Identifier("os".to_string()),
+            Token::Is,
+            Token::String("macos".to_string()),
+            Token::LeftBrace,
+            Token::RightBrace,
+        ]
+        .into();
+
+        let nodes = Parser::from_stream(token_stream).parse().unwrap();
+
+        assert_eq!(
+            nodes,
+            vec![Node::If {
+                condition: Box::new(Node::Or {
+                    left: Box::new(Node::Is {
+                        left: Box::new(Node::Variable("os".to_string())),
+                        right: Box::new(Node::Literal(Value::String("linux".to_string()))),
+                    }),
+                    right: Box::new(Node::Is {
+                        left: Box::new(Node::Variable("os".to_string())),
+                        right: Box::new(Node::Literal(Value::String("macos".to_string()))),
+                    }),
+                }),
+                true_branch: Vec::new(),
+                false_branch: Vec::new(),
+            }]
         );
     }
 }

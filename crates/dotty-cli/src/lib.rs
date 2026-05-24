@@ -51,7 +51,7 @@ impl Dotty {
         if !source.exists() {
             println!(
                 "{} {} was not found, skipping.",
-                "Ignored:".yellow().bold(),
+                "[IGNORED]".yellow().bold(),
                 source.display()
             );
             return Ok(());
@@ -67,7 +67,7 @@ impl Dotty {
             } else {
                 println!(
                     "{} {} already exists, skipping. Use --overwrite to force.",
-                    "Warning:".yellow().bold(),
+                    "[WARNING]".yellow().bold(),
                     target.display()
                 );
                 return Ok(());

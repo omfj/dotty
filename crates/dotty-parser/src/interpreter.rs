@@ -115,7 +115,6 @@ impl Context {
 }
 
 pub struct Interpreter {
-    context: Context,
     environment: Environment,
 }
 
@@ -126,11 +125,20 @@ impl Interpreter {
     }
 
     pub fn from_context(context: Context) -> Self {
-        let environment = Environment::new();
-        Self {
-            context,
-            environment,
-        }
+        let mut environment = Environment::new();
+        environment.set_variable(
+            parser::OS.to_string(),
+            parser::Value::String(context.os.clone()),
+        );
+        environment.set_variable(
+            parser::HOSTNAME.to_string(),
+            parser::Value::String(context.hostname.clone()),
+        );
+        environment.set_variable(
+            parser::PROFILE.to_string(),
+            parser::Value::String(context.profile.clone().unwrap_or_default()),
+        );
+        Self { environment }
     }
 
     pub fn run(&mut self, nodes: Vec<parser::Node>) -> anyhow::Result<Vec<Step>> {
@@ -138,11 +146,20 @@ impl Interpreter {
 
         for node in nodes {
             match node {
-                parser::Node::Link { .. } => {
-                    steps.push(Link::try_from(node)?.into());
+                parser::Node::Link {
+                    source,
+                    destination,
+                } => {
+                    steps.push(Step::Link(Link {
+                        source: self.interpolate(&source)?,
+                        destination: self.interpolate(&destination)?,
+                    }));
                 }
-                parser::Node::Do { .. } => {
-                    steps.push(Action::try_from(node)?.into());
+                parser::Node::Do { command, shell } => {
+                    steps.push(Step::Action(Action {
+                        command: self.interpolate(&command)?,
+                        shell,
+                    }));
                 }
                 parser::Node::If {
                     condition,
@@ -207,16 +224,9 @@ impl Interpreter {
                     .map_err(|_| anyhow::anyhow!("Environment variable '{}' not set", var))?;
                 Ok(parser::Value::String(value))
             }
-            parser::Node::Variable(name) => match name.as_str() {
-                parser::OS => Ok(parser::Value::String(self.context.os.clone())),
-                parser::HOSTNAME => Ok(parser::Value::String(self.context.hostname.clone())),
-                parser::PROFILE => Ok(parser::Value::String(
-                    self.context.profile.clone().unwrap_or_default(),
-                )),
-                _ => match self.environment.get_variable(&name) {
-                    Some(value) => Ok(value.clone()),
-                    None => Err(anyhow::anyhow!("Undefined variable: {}", name)),
-                },
+            parser::Node::Variable(name) => match self.environment.get_variable(&name) {
+                Some(value) => Ok(value.clone()),
+                None => Err(anyhow::anyhow!("Undefined variable: {}", name)),
             },
             node => Err(anyhow::anyhow!("Expected a value, found: {:?}", node)),
         }
