@@ -1,0 +1,22 @@
+{
+  "name": "tree-sitter-dotty",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the Dotty DSL",
+  "main": "bindings/node",
+  "scripts": {
+    "build": "tree-sitter generate"
+  },
+  "dependencies": {
+    "nan": "^2.0.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.26.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.dotty",
+      "file-types": ["dotty"],
+      "injection-regex": "dotty"
+    }
+  ]
+}

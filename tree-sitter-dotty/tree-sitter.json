@@ -1,0 +1,17 @@
+{
+  "grammars": [
+    {
+      "name": "dotty",
+      "scope": "source.dotty",
+      "injection-regex": "dotty",
+      "file-types": ["dotty"],
+      "roots": [],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for the Dotty DSL"
+  }
+}
