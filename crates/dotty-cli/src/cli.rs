@@ -1,7 +1,7 @@
 use clap::Parser;
 use colored::Colorize;
 
-use dotty::{Dotty, DottyConfig};
+use dotty_cli::{Dotty, DottyConfig};
 
 #[derive(Parser, Debug)]
 pub struct Cli {
@@ -69,7 +69,7 @@ impl Cli {
 
 fn load_config(path: &std::path::Path, profile: Option<String>) -> anyhow::Result<DottyConfig> {
     let base = DottyConfig::default().with_profile(profile);
-    dotty::lua::load(path, base).map_err(|e| {
+    dotty_cli::lua::load(path, base).map_err(|e| {
         eprintln!("{} {}", "Error:".red().bold(), e);
         e
     })
