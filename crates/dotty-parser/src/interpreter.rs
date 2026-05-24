@@ -146,6 +146,10 @@ impl Interpreter {
                     links.extend(result.links);
                     actions.extend(result.actions);
                 }
+                parser::Node::Print(expr) => {
+                    let parser::Value::String(s) = self.evaluate_expression(*expr)?;
+                    println!("{}", s);
+                }
                 parser::Node::Assign { variable, value } => {
                     self.environment.set_variable(variable, value);
                 }

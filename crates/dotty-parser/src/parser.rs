@@ -50,6 +50,7 @@ pub enum Node {
     Not(Box<Node>),
     Exists(String),
     Test(String),
+    Print(Box<Node>),
     Variable(String),
     Literal(Value),
 }
@@ -88,6 +89,7 @@ impl<TS: TokenStream> Parser<TS> {
                 Token::Link => self.handle_link(&mut nodes)?,
                 Token::Do => self.handle_do(&mut nodes)?,
                 Token::If => self.handle_if(&mut nodes)?,
+                Token::Print => self.handle_print(&mut nodes)?,
                 Token::Identifier(_) => self.handle_assignment(&mut nodes)?,
                 _ => return Err(anyhow::anyhow!("Unexpected token: {:?}", token)),
             }
@@ -112,6 +114,7 @@ impl<TS: TokenStream> Parser<TS> {
                 Token::Link => self.handle_link(&mut nodes)?,
                 Token::Do => self.handle_do(&mut nodes)?,
                 Token::If => self.handle_if(&mut nodes)?,
+                Token::Print => self.handle_print(&mut nodes)?,
                 _ => return Err(anyhow::anyhow!("Unexpected token in block: {:?}", token)),
             }
         }
@@ -275,6 +278,13 @@ impl<TS: TokenStream> Parser<TS> {
             });
         }
 
+        Ok(())
+    }
+
+    fn handle_print(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
+        self.consume();
+        let expr = self.parse_atom()?;
+        nodes.push(Node::Print(Box::new(expr)));
         Ok(())
     }
 

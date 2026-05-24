@@ -5,6 +5,7 @@ const ENV_KEYWORD: &str = "env";
 const EXISTS_KEYWORD: &str = "exists";
 const DO_KEYWORD: &str = "do";
 const TEST_KEYWORD: &str = "test";
+const PRINT_KEYWORD: &str = "print";
 
 const TO_OPERATOR: &str = "to";
 const NOT_OPERATOR: &str = "not";
@@ -41,6 +42,7 @@ pub(crate) enum Token {
     Assign,
     Not,
     Test,
+    Print,
 
     String(String),
     Identifier(String),
@@ -64,6 +66,7 @@ impl TryFrom<&str> for Token {
             ASSIGN_OPERATOR => Ok(Token::Assign),
             NOT_OPERATOR => Ok(Token::Not),
             TEST_KEYWORD => Ok(Token::Test),
+            PRINT_KEYWORD => Ok(Token::Print),
             _ => Err(anyhow::anyhow!("Unknown token: {}", value)),
         }
     }
@@ -241,7 +244,10 @@ mod tests {
 
         let mut lexer = Lexer::new(str);
         assert_eq!(lexer.next_token(), Some(Token::If));
-        assert_eq!(lexer.next_token(), Some(Token::Identifier("os".to_string())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Identifier("os".to_string()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Is));
         assert_eq!(lexer.next_token(), Some(Token::String("linux".to_string())));
         assert_eq!(lexer.next_token(), Some(Token::LeftBrace));
@@ -252,7 +258,10 @@ mod tests {
         );
         assert_eq!(lexer.next_token(), Some(Token::RightBrace));
         assert_eq!(lexer.next_token(), Some(Token::ElseIf));
-        assert_eq!(lexer.next_token(), Some(Token::Identifier("os".to_string())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Identifier("os".to_string()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::Is));
         assert_eq!(
             lexer.next_token(),
@@ -331,7 +340,10 @@ mod tests {
 
         let mut lexer = Lexer::new(str);
         assert_eq!(lexer.next_token(), Some(Token::If));
-        assert_eq!(lexer.next_token(), Some(Token::Identifier("hostname".to_string())));
+        assert_eq!(
+            lexer.next_token(),
+            Some(Token::Identifier("hostname".to_string()))
+        );
         assert_eq!(lexer.next_token(), Some(Token::IsNot));
         assert_eq!(
             lexer.next_token(),
