@@ -98,7 +98,7 @@ impl Dotty {
 
         println!(
             "{} {} -> {}",
-            "Linked:".green().bold(),
+            "[LINKED]".green().bold(),
             source.display(),
             target.display()
         );
@@ -114,7 +114,7 @@ impl Dotty {
                 if !target.exists() {
                     println!(
                         "{} {} does not exist, skipping.",
-                        "Ignored:".yellow().bold(),
+                        "[IGNORED]".yellow().bold(),
                         target.display()
                     );
                     continue;
@@ -128,7 +128,7 @@ impl Dotty {
 
                 println!(
                     "{} {} removed.",
-                    "Removed:".green().bold(),
+                    "[REMOVED]".green().bold(),
                     target.display()
                 );
             }
