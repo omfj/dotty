@@ -1,11 +1,11 @@
-use crate::interpreter::{Context, Interpreter};
+use crate::interpreter::Interpreter;
 use crate::parser::Parser;
 
 mod interpreter;
 mod lexer;
 mod parser;
 
-pub use interpreter::{Action, Link, Step};
+pub use interpreter::{Action, Context, Link, Step};
 
 #[derive(Debug)]
 pub struct DottyConfig {

@@ -1,156 +1,184 @@
 use colored::Colorize;
+use dotty_parser::{Action, Link, Step};
 
 use crate::{
-    config::Action,
     error::DottyError,
     utils::{Absolute, ExpandTilde},
 };
 
-pub mod config;
 pub mod error;
-pub mod lua;
 pub mod utils;
 
-pub use crate::config::DottyConfig;
-
 pub struct Dotty {
-    pub config: DottyConfig,
+    steps: Vec<Step>,
+    overwrite: bool,
+    ask: bool,
 }
 
 impl Dotty {
-    pub fn new(config: DottyConfig) -> Self {
-        Dotty { config }
+    pub fn new(steps: Vec<Step>) -> Self {
+        Self {
+            steps,
+            overwrite: false,
+            ask: false,
+        }
+    }
+
+    pub fn with_overwrite(mut self, overwrite: bool) -> Self {
+        self.overwrite = overwrite;
+        self
+    }
+
+    pub fn with_ask(mut self, ask: bool) -> Self {
+        self.ask = ask;
+        self
     }
 
     pub fn install(&self) -> Result<(), DottyError> {
-        for link in &self.config.links {
-            let source = link.source.expand_tilde_path()?.absolute()?;
-            let target = link.target.expand_tilde_path()?.absolute()?;
-
-            if !source.exists() {
-                println!(
-                    "{} {} was not found, skipping.",
-                    "Ignored:".yellow().bold(),
-                    source.display()
-                );
-                continue;
+        for step in &self.steps {
+            match step {
+                Step::Link(link) => self.install_link(link)?,
+                Step::Action(action) => run_action(action)?,
             }
+        }
+        Ok(())
+    }
 
-            if target.exists() {
-                if self.config.overwrite {
-                    if target.is_dir() {
-                        std::fs::remove_dir_all(&target).map_err(DottyError::IoError)?;
-                    } else {
-                        std::fs::remove_file(&target).map_err(DottyError::IoError)?;
-                    }
-                } else {
-                    println!(
-                        "{} {} already exists, skipping. Use --overwrite to force.",
-                        "Warning:".yellow().bold(),
-                        target.display()
-                    );
-                    continue;
-                }
-            }
+    fn install_link(&self, link: &Link) -> Result<(), DottyError> {
+        let source = link.source.expand_tilde_path()?.absolute()?;
+        let target = link.destination.expand_tilde_path()?.absolute()?;
 
-            if self.config.ask {
-                use std::io::{self, Write};
-                print!("Link {} -> {}? [y/N] ", source.display(), target.display());
-                io::stdout().flush().map_err(DottyError::IoError)?;
-                let mut input = String::new();
-                io::stdin()
-                    .read_line(&mut input)
-                    .map_err(DottyError::IoError)?;
-                if !matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
-                    println!("{} Skipping.", "Skipped:".yellow().bold());
-                    continue;
-                }
-            }
-
-            if let Some(parent) = target.parent()
-                && !parent.exists()
-            {
-                std::fs::create_dir_all(parent).map_err(DottyError::IoError)?;
-            }
-
-            utils::symlink(source.clone(), target.clone())?;
-
+        if !source.exists() {
             println!(
-                "{} {} -> {}",
-                "Linked:".green().bold(),
-                source.display(),
-                target.display()
+                "{} {} was not found, skipping.",
+                "Ignored:".yellow().bold(),
+                source.display()
             );
+            return Ok(());
         }
 
-        for action in &self.config.actions {
-            run_action(action)?;
+        if target.exists() {
+            if self.overwrite {
+                if target.is_dir() {
+                    std::fs::remove_dir_all(&target).map_err(DottyError::IoError)?;
+                } else {
+                    std::fs::remove_file(&target).map_err(DottyError::IoError)?;
+                }
+            } else {
+                println!(
+                    "{} {} already exists, skipping. Use --overwrite to force.",
+                    "Warning:".yellow().bold(),
+                    target.display()
+                );
+                return Ok(());
+            }
         }
+
+        if self.ask {
+            use std::io::{self, Write};
+            print!("Link {} -> {}? [y/N] ", source.display(), target.display());
+            io::stdout().flush().map_err(DottyError::IoError)?;
+            let mut input = String::new();
+            io::stdin()
+                .read_line(&mut input)
+                .map_err(DottyError::IoError)?;
+            if !matches!(input.trim().to_lowercase().as_str(), "y" | "yes") {
+                println!("{} Skipping.", "Skipped:".yellow().bold());
+                return Ok(());
+            }
+        }
+
+        if let Some(parent) = target.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent).map_err(DottyError::IoError)?;
+        }
+
+        utils::symlink(source.clone(), target.clone())?;
+
+        println!(
+            "{} {} -> {}",
+            "Linked:".green().bold(),
+            source.display(),
+            target.display()
+        );
 
         Ok(())
     }
 
     pub fn remove(&self) -> Result<(), DottyError> {
-        for link in &self.config.links {
-            let target = link.target.expand_tilde_path()?.absolute()?;
+        for step in &self.steps {
+            if let Step::Link(link) = step {
+                let target = link.destination.expand_tilde_path()?.absolute()?;
 
-            if !target.exists() {
+                if !target.exists() {
+                    println!(
+                        "{} {} does not exist, skipping.",
+                        "Ignored:".yellow().bold(),
+                        target.display()
+                    );
+                    continue;
+                }
+
+                if target.is_dir() {
+                    std::fs::remove_dir_all(&target).map_err(DottyError::IoError)?;
+                } else {
+                    std::fs::remove_file(&target).map_err(DottyError::IoError)?;
+                }
+
                 println!(
-                    "{} {} does not exist, skipping.",
-                    "Ignored:".yellow().bold(),
+                    "{} {} removed.",
+                    "Removed:".green().bold(),
                     target.display()
                 );
-                continue;
             }
-
-            if target.is_dir() {
-                std::fs::remove_dir_all(&target).map_err(DottyError::IoError)?;
-            } else {
-                std::fs::remove_file(&target).map_err(DottyError::IoError)?;
-            }
-
-            println!(
-                "{} {} removed.",
-                "Removed:".green().bold(),
-                target.display()
-            );
         }
-
         Ok(())
     }
 
     pub fn status(&self) -> Result<(), DottyError> {
-        for link in &self.config.links {
-            let source = link.source.expand_tilde_path()?.absolute()?;
-            let target = link.target.expand_tilde_path()?.absolute()?;
+        let actions: Vec<&Action> = self
+            .steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Action(a) => Some(a),
+                _ => None,
+            })
+            .collect();
 
-            if !source.exists() {
-                print!("{}", "[SOURCE MISSING]".red().bold());
-            } else if !target.exists() {
-                print!("{}", "[NOT LINKED]".yellow().bold());
-            } else if target.is_symlink() {
-                match target.read_link() {
-                    Ok(actual) if actual == source => print!("{}", "[OK]".green().bold()),
-                    Ok(actual) => print!(
-                        "{} (points to {})",
-                        "[WRONG TARGET]".red().bold(),
-                        actual.display()
-                    ),
-                    Err(_) => print!("{}", "[SYMLINK ERROR]".red().bold()),
+        for step in &self.steps {
+            if let Step::Link(link) = step {
+                let source = link.source.expand_tilde_path()?.absolute()?;
+                let target = link.destination.expand_tilde_path()?.absolute()?;
+
+                if !source.exists() {
+                    print!("{}", "[SOURCE MISSING]".red().bold());
+                } else if !target.exists() {
+                    print!("{}", "[NOT LINKED]".yellow().bold());
+                } else if target.is_symlink() {
+                    match target.read_link() {
+                        Ok(actual) if actual == source => print!("{}", "[OK]".green().bold()),
+                        Ok(actual) => print!(
+                            "{} (points to {})",
+                            "[WRONG TARGET]".red().bold(),
+                            actual.display()
+                        ),
+                        Err(_) => print!("{}", "[SYMLINK ERROR]".red().bold()),
+                    }
+                } else {
+                    print!("{}", "[EXISTS BUT NOT SYMLINK]".yellow().bold());
                 }
-            } else {
-                print!("{}", "[EXISTS BUT NOT SYMLINK]".yellow().bold());
-            }
 
-            println!(" {} -> {}", source.display(), target.display());
+                println!(" {} -> {}", source.display(), target.display());
+            }
         }
 
-        if !self.config.actions.is_empty() {
+        if !actions.is_empty() {
             println!();
             println!("{}", "Actions:".blue().bold());
             println!();
-            for action in &self.config.actions {
-                println!("{} {}", "[READY]".green().bold(), action.name);
+            for action in actions {
+                println!("{} {}", "[READY]".green().bold(), action.command);
             }
         }
 
@@ -159,10 +187,13 @@ impl Dotty {
 }
 
 fn run_action(action: &Action) -> Result<(), DottyError> {
-    println!("{} Running: {}", "Action:".blue().bold(), action.name);
+    println!("{} {}", "Action:".blue().bold(), action.command);
 
-    let shell = action.shell.as_str();
-    let shell_bin = if shell.is_empty() { "sh" } else { shell };
+    let shell_bin = if action.shell.is_empty() {
+        "sh"
+    } else {
+        &action.shell
+    };
 
     let output = std::process::Command::new(shell_bin)
         .arg("-c")
@@ -175,12 +206,12 @@ fn run_action(action: &Action) -> Result<(), DottyError> {
         if !stdout.trim().is_empty() {
             println!("{} {}", "Success:".green().bold(), stdout.trim());
         } else {
-            println!("{} {}", "Success:".green().bold(), action.name);
+            println!("{} {}", "Success:".green().bold(), action.command);
         }
         Ok(())
     } else {
         Err(DottyError::CommandError {
-            command: action.name.clone(),
+            command: action.command.clone(),
             message: String::from_utf8_lossy(&output.stderr).to_string(),
         })
     }
@@ -189,15 +220,14 @@ fn run_action(action: &Action) -> Result<(), DottyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DottyConfig, Link};
     use std::fs;
     use tempfile::TempDir;
 
-    fn config_with_links(links: Vec<Link>) -> DottyConfig {
-        DottyConfig {
-            links,
-            ..Default::default()
-        }
+    fn link_step(source: &str, destination: &str) -> Step {
+        Step::Link(Link {
+            source: source.to_string(),
+            destination: destination.to_string(),
+        })
     }
 
     #[test]
@@ -207,10 +237,10 @@ mod tests {
         let target = dir.path().join("target.txt");
         fs::write(&source, "content").unwrap();
 
-        let dotty = Dotty::new(config_with_links(vec![Link {
-            source: source.to_string_lossy().to_string(),
-            target: target.to_string_lossy().to_string(),
-        }]));
+        let dotty = Dotty::new(vec![link_step(
+            &source.to_string_lossy(),
+            &target.to_string_lossy(),
+        )]);
 
         dotty.install().unwrap();
         assert!(target.exists());
@@ -222,10 +252,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let target = dir.path().join("target.txt");
 
-        let dotty = Dotty::new(config_with_links(vec![Link {
-            source: "/nonexistent/source.txt".to_string(),
-            target: target.to_string_lossy().to_string(),
-        }]));
+        let dotty = Dotty::new(vec![link_step(
+            "/nonexistent/source.txt",
+            &target.to_string_lossy(),
+        )]);
 
         dotty.install().unwrap();
         assert!(!target.exists());
@@ -237,10 +267,7 @@ mod tests {
         let target = dir.path().join("target.txt");
         fs::write(&target, "content").unwrap();
 
-        let dotty = Dotty::new(config_with_links(vec![Link {
-            source: "source.txt".to_string(),
-            target: target.to_string_lossy().to_string(),
-        }]));
+        let dotty = Dotty::new(vec![link_step("source.txt", &target.to_string_lossy())]);
 
         dotty.remove().unwrap();
         assert!(!target.exists());
@@ -253,10 +280,10 @@ mod tests {
         let target = dir.path().join("nested/deep/target.txt");
         fs::write(&source, "content").unwrap();
 
-        let dotty = Dotty::new(config_with_links(vec![Link {
-            source: source.to_string_lossy().to_string(),
-            target: target.to_string_lossy().to_string(),
-        }]));
+        let dotty = Dotty::new(vec![link_step(
+            &source.to_string_lossy(),
+            &target.to_string_lossy(),
+        )]);
 
         dotty.install().unwrap();
         assert!(target.exists());

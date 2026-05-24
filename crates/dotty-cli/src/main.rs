@@ -4,9 +4,7 @@ use crate::cli::Cli;
 use clap::Parser;
 
 fn main() {
-    let cli = Cli::parse();
-
-    if cli.run().is_err() {
+    if Cli::parse().run().is_err() {
         std::process::exit(1);
     }
 }

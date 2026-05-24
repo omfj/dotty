@@ -97,8 +97,7 @@ impl Context {
         })
     }
 
-    #[allow(dead_code)]
-    fn with_profile(mut self, profile: String) -> Self {
+    pub fn with_profile(mut self, profile: String) -> Self {
         self.profile = Some(profile);
         self
     }

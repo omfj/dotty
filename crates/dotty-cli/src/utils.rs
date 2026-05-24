@@ -1,5 +1,3 @@
-use colored::Colorize;
-
 pub trait ExpandTilde {
     fn expand_tilde_path(&self) -> Result<std::path::PathBuf, String>;
 }
@@ -37,22 +35,6 @@ impl<P: AsRef<std::path::Path>> Absolute for P {
     }
 }
 
-pub fn get_os_name() -> String {
-    match std::env::consts::OS {
-        "linux" => "linux".to_string(),
-        "macos" => "macos".to_string(),
-        "windows" => "windows".to_string(),
-        os => {
-            eprintln!(
-                "{} Unsupported operating system '{}'.",
-                "Error:".red().bold(),
-                os
-            );
-            os.to_string()
-        }
-    }
-}
-
 pub fn symlink<P: AsRef<std::path::Path>>(source: P, target: P) -> std::io::Result<()> {
     #[cfg(unix)]
     {
@@ -66,35 +48,4 @@ pub fn symlink<P: AsRef<std::path::Path>>(source: P, target: P) -> std::io::Resu
             std::os::windows::fs::symlink_file(source, target)
         }
     }
-}
-
-pub fn is_on_path(cmd: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|paths| {
-            std::env::split_paths(&paths).any(|dir| {
-                let candidate = dir.join(cmd);
-                candidate.is_file() && is_executable(&candidate)
-            })
-        })
-        .unwrap_or(false)
-}
-
-#[cfg(unix)]
-fn is_executable(path: &std::path::Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    path.metadata()
-        .map(|m| m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-fn is_executable(_path: &std::path::Path) -> bool {
-    true
-}
-
-pub fn get_hostname() -> String {
-    std::process::Command::new("hostname")
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string())
 }
