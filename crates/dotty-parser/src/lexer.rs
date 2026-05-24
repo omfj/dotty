@@ -2,11 +2,9 @@ const IF_KEYWORD: &str = "if";
 const ELSE_KEYWORD: &str = "else";
 const LINK_KEYWORD: &str = "link";
 const ENV_KEYWORD: &str = "env";
-const OS_KEYWORD: &str = "os";
 const EXISTS_KEYWORD: &str = "exists";
 const DO_KEYWORD: &str = "do";
 const TEST_KEYWORD: &str = "test";
-const HOSTNAME_KEYWORD: &str = "hostname";
 
 const TO_OPERATOR: &str = "to";
 const NOT_OPERATOR: &str = "not";
@@ -39,12 +37,10 @@ pub(crate) enum Token {
     Else,
     ElseIf,
     Exists,
-    Os,
     Do,
     Assign,
     Not,
     Test,
-    Hostname,
 
     String(String),
     Identifier(String),
@@ -64,12 +60,10 @@ impl TryFrom<&str> for Token {
             IF_KEYWORD => Ok(Token::If),
             ELSE_KEYWORD => Ok(Token::Else),
             EXISTS_KEYWORD => Ok(Token::Exists),
-            OS_KEYWORD => Ok(Token::Os),
             DO_KEYWORD => Ok(Token::Do),
             ASSIGN_OPERATOR => Ok(Token::Assign),
             NOT_OPERATOR => Ok(Token::Not),
             TEST_KEYWORD => Ok(Token::Test),
-            HOSTNAME_KEYWORD => Ok(Token::Hostname),
             _ => Err(anyhow::anyhow!("Unknown token: {}", value)),
         }
     }
@@ -247,7 +241,7 @@ mod tests {
 
         let mut lexer = Lexer::new(str);
         assert_eq!(lexer.next_token(), Some(Token::If));
-        assert_eq!(lexer.next_token(), Some(Token::Os));
+        assert_eq!(lexer.next_token(), Some(Token::Identifier("os".to_string())));
         assert_eq!(lexer.next_token(), Some(Token::Is));
         assert_eq!(lexer.next_token(), Some(Token::String("linux".to_string())));
         assert_eq!(lexer.next_token(), Some(Token::LeftBrace));
@@ -258,7 +252,7 @@ mod tests {
         );
         assert_eq!(lexer.next_token(), Some(Token::RightBrace));
         assert_eq!(lexer.next_token(), Some(Token::ElseIf));
-        assert_eq!(lexer.next_token(), Some(Token::Os));
+        assert_eq!(lexer.next_token(), Some(Token::Identifier("os".to_string())));
         assert_eq!(lexer.next_token(), Some(Token::Is));
         assert_eq!(
             lexer.next_token(),
@@ -337,7 +331,7 @@ mod tests {
 
         let mut lexer = Lexer::new(str);
         assert_eq!(lexer.next_token(), Some(Token::If));
-        assert_eq!(lexer.next_token(), Some(Token::Hostname));
+        assert_eq!(lexer.next_token(), Some(Token::Identifier("hostname".to_string())));
         assert_eq!(lexer.next_token(), Some(Token::IsNot));
         assert_eq!(
             lexer.next_token(),

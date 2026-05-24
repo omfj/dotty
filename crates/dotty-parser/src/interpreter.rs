@@ -75,15 +75,30 @@ pub struct Context {
 
 impl Context {
     pub fn current() -> anyhow::Result<Self> {
-        let output = std::process::Command::new("hostname")
-            .output()
-            .map_err(|e| anyhow::anyhow!("Failed to get hostname: {}", e))?;
-        let hostname = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let os = Self::get_os();
+        let hostname = Self::get_hostname()?;
         Ok(Self {
-            os: std::env::consts::OS.to_string(),
+            os,
             hostname,
             profile: None,
         })
+    }
+
+    #[allow(dead_code)]
+    fn with_profile(mut self, profile: String) -> Self {
+        self.profile = Some(profile);
+        self
+    }
+
+    fn get_os() -> String {
+        std::env::consts::OS.to_string()
+    }
+
+    fn get_hostname() -> anyhow::Result<String> {
+        let output = std::process::Command::new("hostname")
+            .output()
+            .map_err(|e| anyhow::anyhow!("Failed to get hostname: {}", e))?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 }
 
@@ -93,15 +108,13 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
+    #[allow(dead_code)]
     pub fn new() -> anyhow::Result<Self> {
         Ok(Self::from_context(Context::current()?))
     }
 
     pub fn from_context(context: Context) -> Self {
-        let mut environment = Environment::new();
-        if let Some(profile) = &context.profile {
-            environment.set_variable("profile".to_string(), parser::Value::String(profile.clone()));
-        }
+        let environment = Environment::new();
         Self {
             context,
             environment,
@@ -161,13 +174,11 @@ impl Interpreter {
                 Ok(self.evaluate_condition(*left)? && self.evaluate_condition(*right)?)
             }
             parser::Node::Exists(path) => Ok(std::path::Path::new(&path).exists()),
-            parser::Node::Test(command) => {
-                Ok(std::process::Command::new("which")
-                    .arg(&command)
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false))
-            }
+            parser::Node::Test(command) => Ok(std::process::Command::new("which")
+                .arg(&command)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)),
             node => Err(anyhow::anyhow!("Expected a condition, found: {:?}", node)),
         }
     }
@@ -177,19 +188,22 @@ impl Interpreter {
             parser::Node::Literal(parser::Value::String(s)) => {
                 Ok(parser::Value::String(self.interpolate(&s)?))
             }
-            parser::Node::Os => Ok(parser::Value::String(self.context.os.clone())),
-            parser::Node::Hostname => Ok(parser::Value::String(self.context.hostname.clone())),
             parser::Node::Env(var) => {
                 let value = std::env::var(&var)
                     .map_err(|_| anyhow::anyhow!("Environment variable '{}' not set", var))?;
                 Ok(parser::Value::String(value))
             }
-            parser::Node::Variable(name) => {
-                match self.environment.get_variable(&name) {
+            parser::Node::Variable(name) => match name.as_str() {
+                parser::OS => Ok(parser::Value::String(self.context.os.clone())),
+                parser::HOSTNAME => Ok(parser::Value::String(self.context.hostname.clone())),
+                parser::PROFILE => Ok(parser::Value::String(
+                    self.context.profile.clone().unwrap_or_default(),
+                )),
+                _ => match self.environment.get_variable(&name) {
                     Some(value) => Ok(value.clone()),
                     None => Err(anyhow::anyhow!("Undefined variable: {}", name)),
-                }
-            }
+                },
+            },
             node => Err(anyhow::anyhow!("Expected a value, found: {:?}", node)),
         }
     }

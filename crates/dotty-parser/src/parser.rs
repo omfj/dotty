@@ -4,6 +4,11 @@ use crate::lexer::{self, Lexer, Token, TokenStream};
 
 const DEFAULT_SHELL: &str = "/bin/sh";
 
+pub const OS: &str = "os";
+pub const HOSTNAME: &str = "hostname";
+pub const PROFILE: &str = "profile";
+const SPECIAL_VARIABLES: &[&str] = &[OS, HOSTNAME, PROFILE];
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     String(String),
@@ -45,8 +50,6 @@ pub enum Node {
     Not(Box<Node>),
     Exists(String),
     Test(String),
-    Os,
-    Hostname,
     Variable(String),
     Literal(Value),
 }
@@ -175,14 +178,6 @@ impl<TS: TokenStream> Parser<TS> {
                     let variable = self.expect_string()?;
                     Ok(Node::Env(variable))
                 }
-                Token::Os => {
-                    self.consume();
-                    Ok(Node::Os)
-                }
-                Token::Hostname => {
-                    self.consume();
-                    Ok(Node::Hostname)
-                }
                 Token::Test => {
                     self.consume();
                     let command = self.expect_string()?;
@@ -227,10 +222,7 @@ impl<TS: TokenStream> Parser<TS> {
     }
 
     fn optionally_expect_string(&mut self) -> Option<String> {
-        match self.expect_string() {
-            Ok(value) => Some(value),
-            Err(_) => None,
-        }
+        self.expect_string().ok()
     }
 
     fn handle_link(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
@@ -310,6 +302,12 @@ impl<TS: TokenStream> Parser<TS> {
     fn handle_assignment(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
         if let Some(Token::Identifier(variable)) = &self.current_token {
             let variable = variable.clone();
+            if SPECIAL_VARIABLES.contains(&variable.as_str()) {
+                return Err(anyhow::anyhow!(
+                    "Cannot assign to special variable '{}'",
+                    variable
+                ));
+            }
             self.consume();
             self.expect_token(lexer::Token::Assign)?;
             let value = self.expect_string()?;
@@ -374,7 +372,7 @@ mod tests {
     fn it_parses_if() {
         let token_stream: TokenList = vec![
             Token::If,
-            Token::Os,
+            Token::Identifier("os".to_string()),
             Token::Is,
             Token::String("linux".to_string()),
             Token::LeftBrace,
@@ -390,7 +388,7 @@ mod tests {
             nodes,
             vec![Node::If {
                 condition: Box::new(Node::Is {
-                    left: Box::new(Node::Os),
+                    left: Box::new(Node::Variable("os".to_string())),
                     right: Box::new(Node::Literal(Value::String("linux".to_string()))),
                 }),
                 true_branch: vec![Node::Do {
