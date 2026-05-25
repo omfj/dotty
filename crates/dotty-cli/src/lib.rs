@@ -39,6 +39,10 @@ impl Dotty {
             match step {
                 Step::Link(link) => self.install_link(link)?,
                 Step::Action(action) => run_action(action)?,
+                Step::CreateDir(path) => {
+                    std::fs::create_dir_all(path).map_err(DottyError::IoError)?;
+                    println!("{} {}", "[CREATED]".cyan().bold(), path);
+                }
             }
         }
         Ok(())
@@ -86,12 +90,6 @@ impl Dotty {
                 println!("{} Skipping.", "Skipped:".yellow().bold());
                 return Ok(());
             }
-        }
-
-        if let Some(parent) = target.parent()
-            && !parent.exists()
-        {
-            std::fs::create_dir_all(parent).map_err(DottyError::IoError)?;
         }
 
         utils::symlink(source.clone(), target.clone())?;
@@ -170,6 +168,29 @@ impl Dotty {
                 }
 
                 println!(" {} -> {}", source.display(), target.display());
+            }
+        }
+
+        let dirs: Vec<&String> = self
+            .steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::CreateDir(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+
+        if !dirs.is_empty() {
+            println!();
+            println!("{}", "Directories:".blue().bold());
+            println!();
+            for path in dirs {
+                let status = if std::path::Path::new(path).exists() {
+                    "[EXISTS]".green().bold()
+                } else {
+                    "[MISSING]".yellow().bold()
+                };
+                println!("{} {}", status, path);
             }
         }
 
@@ -275,17 +296,18 @@ mod tests {
 
     #[test]
     fn test_install_creates_parent_dirs() {
+        use dotty_parser::{Context, DottyConfig};
+
         let dir = TempDir::new().unwrap();
         let source = dir.path().join("source.txt");
         let target = dir.path().join("nested/deep/target.txt");
         fs::write(&source, "content").unwrap();
 
-        let dotty = Dotty::new(vec![link_step(
-            &source.to_string_lossy(),
-            &target.to_string_lossy(),
-        )]);
+        let config = format!("link \"{}\" to \"{}\"", source.display(), target.display());
+        let ctx = Context::current().unwrap();
+        let steps = DottyConfig::parse_with_context(&config, ctx).unwrap().steps;
 
-        dotty.install().unwrap();
+        Dotty::new(steps).install().unwrap();
         assert!(target.exists());
     }
 }
