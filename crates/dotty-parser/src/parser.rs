@@ -58,15 +58,20 @@ pub enum Node {
 pub(crate) struct Parser<TS: TokenStream> {
     token_stream: TS,
     current_token: Option<lexer::Token>,
+    current_line: usize,
 }
 
 impl<'a> Parser<Lexer<'a>> {
     pub fn new(source: &'a str) -> Self {
         let mut lexer = Lexer::new(source);
-        let current_token = lexer.next_token();
+        let (current_token, current_line) = match lexer.next_token() {
+            Some((t, l)) => (Some(t), l),
+            None => (None, 1),
+        };
         Self {
             token_stream: lexer,
             current_token,
+            current_line,
         }
     }
 }
@@ -74,10 +79,14 @@ impl<'a> Parser<Lexer<'a>> {
 impl<TS: TokenStream> Parser<TS> {
     #[cfg(test)]
     pub fn from_stream(mut stream: TS) -> Self {
-        let current_token = stream.next_token();
+        let (current_token, current_line) = match stream.next_token() {
+            Some((t, l)) => (Some(t), l),
+            None => (None, 0),
+        };
         Self {
             token_stream: stream,
             current_token,
+            current_line,
         }
     }
 
@@ -91,7 +100,13 @@ impl<TS: TokenStream> Parser<TS> {
                 Token::If => self.handle_if(&mut nodes)?,
                 Token::Print => self.handle_print(&mut nodes)?,
                 Token::Identifier(_) => self.handle_assignment(&mut nodes)?,
-                _ => return Err(anyhow::anyhow!("Unexpected token: {:?}", token)),
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "line {}: unexpected token {:?}",
+                        self.current_line,
+                        token
+                    ));
+                }
             }
         }
 
@@ -115,7 +130,13 @@ impl<TS: TokenStream> Parser<TS> {
                 Token::Do => self.handle_do(&mut nodes)?,
                 Token::If => self.handle_if(&mut nodes)?,
                 Token::Print => self.handle_print(&mut nodes)?,
-                _ => return Err(anyhow::anyhow!("Unexpected token in block: {:?}", token)),
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "line {}: unexpected token in block {:?}",
+                        self.current_line,
+                        token
+                    ));
+                }
             }
         }
 
@@ -124,7 +145,15 @@ impl<TS: TokenStream> Parser<TS> {
 
     // Advances to the next token
     fn consume(&mut self) {
-        self.current_token = self.token_stream.next_token();
+        match self.token_stream.next_token() {
+            Some((t, l)) => {
+                self.current_token = Some(t);
+                self.current_line = l;
+            }
+            None => {
+                self.current_token = None;
+            }
+        }
     }
 
     fn expect_token(&mut self, expected: lexer::Token) -> anyhow::Result<()> {
@@ -134,13 +163,18 @@ impl<TS: TokenStream> Parser<TS> {
                 Ok(())
             } else {
                 Err(anyhow::anyhow!(
-                    "Expected token {:?}, found: {:?}",
+                    "line {}: expected {:?}, found {:?}",
+                    self.current_line,
                     expected,
                     token
                 ))
             }
         } else {
-            Err(anyhow::anyhow!("Expected token {:?}, found EOF", expected))
+            Err(anyhow::anyhow!(
+                "line {}: expected {:?}, found EOF",
+                self.current_line,
+                expected
+            ))
         }
     }
 
@@ -225,12 +259,16 @@ impl<TS: TokenStream> Parser<TS> {
                     Ok(Node::Variable(name))
                 }
                 _ => Err(anyhow::anyhow!(
-                    "Expected a condition atom, found: {:?}",
+                    "line {}: expected a value, found {:?}",
+                    self.current_line,
                     token
                 )),
             }
         } else {
-            Err(anyhow::anyhow!("Expected a condition atom, found EOF"))
+            Err(anyhow::anyhow!(
+                "line {}: expected a value, found EOF",
+                self.current_line
+            ))
         }
     }
 
@@ -241,7 +279,8 @@ impl<TS: TokenStream> Parser<TS> {
             Ok(value)
         } else {
             Err(anyhow::anyhow!(
-                "Expected string literal, found: {:?}",
+                "line {}: expected a string, found {:?}",
+                self.current_line,
                 self.current_token
             ))
         }
@@ -252,6 +291,7 @@ impl<TS: TokenStream> Parser<TS> {
     }
 
     fn handle_link(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
+        let line = self.current_line;
         self.consume();
 
         let source = self.parse_atom()?;
@@ -259,7 +299,8 @@ impl<TS: TokenStream> Parser<TS> {
             source_str
         } else {
             return Err(anyhow::anyhow!(
-                "Expected a string literal for link source, found: {:?}",
+                "line {}: link source must be a string, found {:?}",
+                line,
                 source
             ));
         };
@@ -270,7 +311,8 @@ impl<TS: TokenStream> Parser<TS> {
             dest_str
         } else {
             return Err(anyhow::anyhow!(
-                "Expected a string literal for link destination, found: {:?}",
+                "line {}: link destination must be a string, found {:?}",
+                line,
                 destination
             ));
         };
@@ -333,11 +375,13 @@ impl<TS: TokenStream> Parser<TS> {
     }
 
     fn handle_assignment(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
+        let line = self.current_line;
         if let Some(Token::Identifier(variable)) = &self.current_token {
             let variable = variable.clone();
             if SPECIAL_VARIABLES.contains(&variable.as_str()) {
                 return Err(anyhow::anyhow!(
-                    "Cannot assign to special variable '{}'",
+                    "line {}: cannot assign to special variable '{}'",
+                    line,
                     variable
                 ));
             }
@@ -351,7 +395,8 @@ impl<TS: TokenStream> Parser<TS> {
             Ok(())
         } else {
             Err(anyhow::anyhow!(
-                "Expected an identifier for assignment, found: {:?}",
+                "line {}: expected an identifier, found {:?}",
+                line,
                 self.current_token
             ))
         }

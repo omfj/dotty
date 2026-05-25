@@ -73,7 +73,7 @@ impl TryFrom<&str> for Token {
 }
 
 pub(crate) trait TokenStream {
-    fn next_token(&mut self) -> Option<Token>;
+    fn next_token(&mut self) -> Option<(Token, usize)>;
 }
 
 // Only a simple helper for testing purposes now.
@@ -90,8 +90,8 @@ impl From<Vec<Token>> for TokenList {
 
 #[cfg(test)]
 impl TokenStream for TokenList {
-    fn next_token(&mut self) -> Option<Token> {
-        self.0.pop_front()
+    fn next_token(&mut self) -> Option<(Token, usize)> {
+        self.0.pop_front().map(|t| (t, 0))
     }
 }
 
@@ -99,24 +99,27 @@ impl TokenStream for TokenList {
 pub(crate) struct Lexer<'a> {
     source: &'a str,
     position: usize,
+    line: usize,
 }
 
 impl TokenStream for Lexer<'_> {
-    fn next_token(&mut self) -> Option<Token> {
+    fn next_token(&mut self) -> Option<(Token, usize)> {
         self.skip_whitespace();
 
         if self.is_eof() {
             return None;
         }
 
+        let token_line = self.line;
+
         if self.source[self.position..].starts_with(LEFT_BRACE) {
             self.position += 1;
-            return Some(Token::LeftBrace);
+            return Some((Token::LeftBrace, token_line));
         }
 
         if self.source[self.position..].starts_with(RIGHT_BRACE) {
             self.position += 1;
-            return Some(Token::RightBrace);
+            return Some((Token::RightBrace, token_line));
         }
 
         if self.source[self.position..].starts_with(COMMENT_CHAR) {
@@ -135,7 +138,7 @@ impl TokenStream for Lexer<'_> {
                     .map(|i| i + self.position + 1)?;
                 let string = self.source[self.position + 1..end_quote].to_string();
                 self.position = end_quote + 1;
-                return Some(Token::String(string));
+                return Some((Token::String(string), token_line));
             }
         }
 
@@ -150,19 +153,19 @@ impl TokenStream for Lexer<'_> {
 
             if token == Token::Else && self.peek_next_token() == Some(Token::If) {
                 self.position += IF_KEYWORD.len() + 1; // Skip "else if" and the following whitespace
-                return Some(Token::ElseIf);
+                return Some((Token::ElseIf, token_line));
             }
 
             if token == Token::Is && self.peek_next_token() == Some(Token::Not) {
                 self.position += NOT_OPERATOR.len() + 1; // Skip "is not" and the following whitespace
-                return Some(Token::IsNot);
+                return Some((Token::IsNot, token_line));
             }
 
-            return Some(token);
+            return Some((token, token_line));
         }
 
         self.position = word_end;
-        Some(Token::Identifier(word.to_string()))
+        Some((Token::Identifier(word.to_string()), token_line))
     }
 }
 
@@ -171,18 +174,24 @@ impl<'a> Lexer<'a> {
         Self {
             source,
             position: 0,
+            line: 1,
         }
     }
 
     fn peek_next_token(&mut self) -> Option<Token> {
-        let saved = self.position;
-        let token = self.next_token();
-        self.position = saved;
+        let saved_pos = self.position;
+        let saved_line = self.line;
+        let token = self.next_token().map(|(t, _)| t);
+        self.position = saved_pos;
+        self.line = saved_line;
         token
     }
 
     fn skip_whitespace(&mut self) {
         while !self.is_eof() && self.is_at_whitespace() {
+            if self.source[self.position..].starts_with('\n') {
+                self.line += 1;
+            }
             self.position += 1;
         }
     }
@@ -197,6 +206,13 @@ impl<'a> Lexer<'a> {
 }
 
 #[cfg(test)]
+impl Lexer<'_> {
+    fn next_tok(&mut self) -> Option<Token> {
+        self.next_token().map(|t| t.0)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -205,17 +221,17 @@ mod tests {
         let str = r#"link "dotfiles/.bashrc" to "~/.bashrc""#;
 
         let mut lexer = Lexer::new(str);
-        assert_eq!(lexer.next_token(), Some(Token::Link));
+        assert_eq!(lexer.next_tok(), Some(Token::Link));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("dotfiles/.bashrc".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::To));
+        assert_eq!(lexer.next_tok(), Some(Token::To));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("~/.bashrc".to_string()))
         );
-        assert_eq!(lexer.next_token(), None);
+        assert_eq!(lexer.next_tok(), None);
     }
 
     #[test]
@@ -223,12 +239,12 @@ mod tests {
         let str = r#"do "echo 'Hello, world!'" "#;
 
         let mut lexer = Lexer::new(str);
-        assert_eq!(lexer.next_token(), Some(Token::Do));
+        assert_eq!(lexer.next_tok(), Some(Token::Do));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("echo 'Hello, world!'".to_string()))
         );
-        assert_eq!(lexer.next_token(), None);
+        assert_eq!(lexer.next_tok(), None);
     }
 
     #[test]
@@ -243,45 +259,36 @@ mod tests {
         "#;
 
         let mut lexer = Lexer::new(str);
-        assert_eq!(lexer.next_token(), Some(Token::If));
+        assert_eq!(lexer.next_tok(), Some(Token::If));
+        assert_eq!(lexer.next_tok(), Some(Token::Identifier("os".to_string())));
+        assert_eq!(lexer.next_tok(), Some(Token::Is));
+        assert_eq!(lexer.next_tok(), Some(Token::String("linux".to_string())));
+        assert_eq!(lexer.next_tok(), Some(Token::LeftBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::Do));
         assert_eq!(
-            lexer.next_token(),
-            Some(Token::Identifier("os".to_string()))
-        );
-        assert_eq!(lexer.next_token(), Some(Token::Is));
-        assert_eq!(lexer.next_token(), Some(Token::String("linux".to_string())));
-        assert_eq!(lexer.next_token(), Some(Token::LeftBrace));
-        assert_eq!(lexer.next_token(), Some(Token::Do));
-        assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("echo 'Linux!'".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::RightBrace));
-        assert_eq!(lexer.next_token(), Some(Token::ElseIf));
+        assert_eq!(lexer.next_tok(), Some(Token::RightBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::ElseIf));
+        assert_eq!(lexer.next_tok(), Some(Token::Identifier("os".to_string())));
+        assert_eq!(lexer.next_tok(), Some(Token::Is));
+        assert_eq!(lexer.next_tok(), Some(Token::String("windows".to_string())));
+        assert_eq!(lexer.next_tok(), Some(Token::LeftBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::Do));
         assert_eq!(
-            lexer.next_token(),
-            Some(Token::Identifier("os".to_string()))
-        );
-        assert_eq!(lexer.next_token(), Some(Token::Is));
-        assert_eq!(
-            lexer.next_token(),
-            Some(Token::String("windows".to_string()))
-        );
-        assert_eq!(lexer.next_token(), Some(Token::LeftBrace));
-        assert_eq!(lexer.next_token(), Some(Token::Do));
-        assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("echo 'Windows!'".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::RightBrace));
-        assert_eq!(lexer.next_token(), Some(Token::Else));
-        assert_eq!(lexer.next_token(), Some(Token::LeftBrace));
-        assert_eq!(lexer.next_token(), Some(Token::Do));
+        assert_eq!(lexer.next_tok(), Some(Token::RightBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::Else));
+        assert_eq!(lexer.next_tok(), Some(Token::LeftBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::Do));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("echo 'Other OS!'".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::RightBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::RightBrace));
     }
 
     #[test]
@@ -293,24 +300,21 @@ mod tests {
 
         let mut lexer = Lexer::new(str);
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::Identifier("common".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::Assign));
+        assert_eq!(lexer.next_tok(), Some(Token::Assign));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("hosts/common".to_string()))
         );
+        assert_eq!(lexer.next_tok(), Some(Token::Identifier("mac".to_string())));
+        assert_eq!(lexer.next_tok(), Some(Token::Assign));
         assert_eq!(
-            lexer.next_token(),
-            Some(Token::Identifier("mac".to_string()))
-        );
-        assert_eq!(lexer.next_token(), Some(Token::Assign));
-        assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("hosts/mac".to_string()))
         );
-        assert_eq!(lexer.next_token(), None);
+        assert_eq!(lexer.next_tok(), None);
     }
 
     #[test]
@@ -321,17 +325,17 @@ mod tests {
         "#;
 
         let mut lexer = Lexer::new(str);
-        assert_eq!(lexer.next_token(), Some(Token::If));
-        assert_eq!(lexer.next_token(), Some(Token::Not));
-        assert_eq!(lexer.next_token(), Some(Token::Test));
-        assert_eq!(lexer.next_token(), Some(Token::String("echo".to_string())));
-        assert_eq!(lexer.next_token(), Some(Token::LeftBrace));
-        assert_eq!(lexer.next_token(), Some(Token::Do));
+        assert_eq!(lexer.next_tok(), Some(Token::If));
+        assert_eq!(lexer.next_tok(), Some(Token::Not));
+        assert_eq!(lexer.next_tok(), Some(Token::Test));
+        assert_eq!(lexer.next_tok(), Some(Token::String("echo".to_string())));
+        assert_eq!(lexer.next_tok(), Some(Token::LeftBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::Do));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("echo 'echo is not available!'".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::RightBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::RightBrace));
     }
 
     #[test]
@@ -339,17 +343,17 @@ mod tests {
         let str = r#"if hostname is not "my-work-book" {}"#;
 
         let mut lexer = Lexer::new(str);
-        assert_eq!(lexer.next_token(), Some(Token::If));
+        assert_eq!(lexer.next_tok(), Some(Token::If));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::Identifier("hostname".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::IsNot));
+        assert_eq!(lexer.next_tok(), Some(Token::IsNot));
         assert_eq!(
-            lexer.next_token(),
+            lexer.next_tok(),
             Some(Token::String("my-work-book".to_string()))
         );
-        assert_eq!(lexer.next_token(), Some(Token::LeftBrace));
-        assert_eq!(lexer.next_token(), Some(Token::RightBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::LeftBrace));
+        assert_eq!(lexer.next_tok(), Some(Token::RightBrace));
     }
 }
