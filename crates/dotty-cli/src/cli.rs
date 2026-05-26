@@ -6,9 +6,9 @@ use dotty_cli::Dotty;
 
 #[derive(Parser, Debug)]
 pub struct Cli {
-    /// Path to the dottyfile
-    #[clap(short, long, default_value = "dottyfile")]
-    pub config: std::path::PathBuf,
+    /// Path to the dottyfile (walks up directories if not specified)
+    #[clap(short, long)]
+    pub config: Option<std::path::PathBuf>,
     #[clap(subcommand)]
     pub command: Command,
 }
@@ -43,7 +43,23 @@ pub enum Command {
 
 impl Cli {
     pub fn run(self) -> anyhow::Result<()> {
-        let config_path = self.config.clone();
+        let config_path = match self.config {
+            Some(p) => p,
+            None => find_dottyfile()?,
+        };
+
+        // Change to the dottyfile's directory so relative paths in the file resolve correctly
+        if let Some(dir) = config_path.parent()
+            && !dir.as_os_str().is_empty()
+        {
+            std::env::set_current_dir(dir)
+                .map_err(|e| anyhow::anyhow!("Failed to chdir to '{}': {}", dir.display(), e))?;
+        }
+
+        let config_path = config_path
+            .file_name()
+            .map(std::path::PathBuf::from)
+            .unwrap_or(config_path);
 
         match self.command {
             Command::Install {
@@ -76,6 +92,26 @@ impl Cli {
                     anyhow::anyhow!("{}", e)
                 })?;
                 Ok(())
+            }
+        }
+    }
+}
+
+fn find_dottyfile() -> anyhow::Result<std::path::PathBuf> {
+    let mut dir = std::env::current_dir()
+        .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
+
+    loop {
+        let dottyfile = dir.join("dottyfile");
+        if dottyfile.exists() {
+            return Ok(dottyfile);
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent.to_path_buf(),
+            None => {
+                return Err(anyhow::anyhow!(
+                    "No dottyfile found in current or parent directories"
+                ));
             }
         }
     }

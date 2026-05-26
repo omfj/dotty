@@ -187,9 +187,11 @@ impl Interpreter {
                 parser::Node::Clone { url, destination } => {
                     let destination = self.interpolate(&destination)?;
                     if let Some(parent) = std::path::Path::new(&destination).parent()
-                        && !parent.as_os_str().is_empty() && !parent.exists() {
-                            steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
-                        }
+                        && !parent.as_os_str().is_empty()
+                        && !parent.exists()
+                    {
+                        steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
+                    }
                     steps.push(Step::Clone(Clone {
                         url: self.interpolate(&url)?,
                         destination,
@@ -201,9 +203,11 @@ impl Interpreter {
                 } => {
                     let destination = self.interpolate(&destination)?;
                     if let Some(parent) = std::path::Path::new(&destination).parent()
-                        && !parent.as_os_str().is_empty() && !parent.exists() {
-                            steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
-                        }
+                        && !parent.as_os_str().is_empty()
+                        && !parent.exists()
+                    {
+                        steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
+                    }
                     steps.push(Step::Copy(Copy {
                         source: self.interpolate(&source)?,
                         destination,
