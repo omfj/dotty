@@ -188,7 +188,8 @@ impl Dotty {
             println!("{}", "Directories:".blue().bold());
             println!();
             for path in dirs {
-                let status = if std::path::Path::new(path).exists() {
+                let expanded = path.expand_tilde_path().unwrap_or_else(|_| std::path::PathBuf::from(path));
+                let status = if expanded.exists() {
                     "[EXISTS]".green().bold()
                 } else {
                     "[MISSING]".yellow().bold()
@@ -211,7 +212,8 @@ impl Dotty {
             println!("{}", "Clones:".blue().bold());
             println!();
             for clone in clones {
-                let status = if std::path::Path::new(&clone.destination).exists() {
+                let expanded = clone.destination.expand_tilde_path().unwrap_or_else(|_| std::path::PathBuf::from(&clone.destination));
+                let status = if expanded.exists() {
                     "[EXISTS]".green().bold()
                 } else {
                     "[MISSING]".yellow().bold()

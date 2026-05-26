@@ -138,6 +138,7 @@ impl Context {
 
 pub struct Interpreter {
     environment: Environment,
+    created_dirs: std::collections::HashSet<String>,
 }
 
 impl Interpreter {
@@ -160,7 +161,22 @@ impl Interpreter {
             parser::PROFILE.to_string(),
             parser::Value::String(context.profile.clone().unwrap_or_default()),
         );
-        Self { environment }
+        Self {
+            environment,
+            created_dirs: std::collections::HashSet::new(),
+        }
+    }
+
+    fn emit_create_dir(&mut self, path: &str, steps: &mut Vec<Step>) {
+        if let Some(parent) = std::path::Path::new(path).parent()
+            && !parent.as_os_str().is_empty()
+            && !parent.exists()
+        {
+            let dir = parent.to_string_lossy().into_owned();
+            if self.created_dirs.insert(dir.clone()) {
+                steps.push(Step::CreateDir(dir));
+            }
+        }
     }
 
     pub fn run(&mut self, nodes: Vec<parser::Node>) -> anyhow::Result<Vec<Step>> {
@@ -173,12 +189,7 @@ impl Interpreter {
                     destination,
                 } => {
                     let destination = self.interpolate(&destination)?;
-                    if let Some(parent) = std::path::Path::new(&destination).parent()
-                        && !parent.as_os_str().is_empty()
-                        && !parent.exists()
-                    {
-                        steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
-                    }
+                    self.emit_create_dir(&destination, &mut steps);
                     steps.push(Step::Link(Link {
                         source: self.interpolate(&source)?,
                         destination,
@@ -186,12 +197,7 @@ impl Interpreter {
                 }
                 parser::Node::Clone { url, destination } => {
                     let destination = self.interpolate(&destination)?;
-                    if let Some(parent) = std::path::Path::new(&destination).parent()
-                        && !parent.as_os_str().is_empty()
-                        && !parent.exists()
-                    {
-                        steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
-                    }
+                    self.emit_create_dir(&destination, &mut steps);
                     steps.push(Step::Clone(Clone {
                         url: self.interpolate(&url)?,
                         destination,
@@ -202,12 +208,7 @@ impl Interpreter {
                     destination,
                 } => {
                     let destination = self.interpolate(&destination)?;
-                    if let Some(parent) = std::path::Path::new(&destination).parent()
-                        && !parent.as_os_str().is_empty()
-                        && !parent.exists()
-                    {
-                        steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
-                    }
+                    self.emit_create_dir(&destination, &mut steps);
                     steps.push(Step::Copy(Copy {
                         source: self.interpolate(&source)?,
                         destination,
