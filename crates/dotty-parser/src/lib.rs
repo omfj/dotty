@@ -5,7 +5,7 @@ mod interpreter;
 mod lexer;
 mod parser;
 
-pub use interpreter::{Action, Context, Link, Step};
+pub use interpreter::{Action, Chmod, Clone, Context, Copy, Link, Step};
 
 #[derive(Debug)]
 pub struct DottyConfig {

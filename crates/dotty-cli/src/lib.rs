@@ -1,5 +1,5 @@
 use colored::Colorize;
-use dotty_parser::{Action, Link, Step};
+use dotty_parser::{Action, Chmod, Clone, Copy, Link, Step};
 
 use crate::{
     error::DottyError,
@@ -43,6 +43,9 @@ impl Dotty {
                     std::fs::create_dir_all(path).map_err(DottyError::IoError)?;
                     println!("{} {}", "[CREATED]".cyan().bold(), path);
                 }
+                Step::Clone(clone) => run_clone(clone)?,
+                Step::Copy(copy) => run_copy(copy)?,
+                Step::Chmod(chmod) => run_chmod(chmod)?,
             }
         }
         Ok(())
@@ -194,6 +197,29 @@ impl Dotty {
             }
         }
 
+        let clones: Vec<&Clone> = self
+            .steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Clone(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+
+        if !clones.is_empty() {
+            println!();
+            println!("{}", "Clones:".blue().bold());
+            println!();
+            for clone in clones {
+                let status = if std::path::Path::new(&clone.destination).exists() {
+                    "[EXISTS]".green().bold()
+                } else {
+                    "[MISSING]".yellow().bold()
+                };
+                println!("{} {} -> {}", status, clone.url, clone.destination);
+            }
+        }
+
         if !actions.is_empty() {
             println!();
             println!("{}", "Actions:".blue().bold());
@@ -236,6 +262,86 @@ fn run_action(action: &Action) -> Result<(), DottyError> {
             message: String::from_utf8_lossy(&output.stderr).to_string(),
         })
     }
+}
+
+fn run_clone(clone: &Clone) -> Result<(), DottyError> {
+    if std::path::Path::new(&clone.destination).exists() {
+        println!(
+            "{} {} already exists, skipping.",
+            "[IGNORED]".yellow().bold(),
+            clone.destination
+        );
+        return Ok(());
+    }
+
+    println!(
+        "{} {} -> {}",
+        "[CLONING]".cyan().bold(),
+        clone.url,
+        clone.destination
+    );
+
+    let output = std::process::Command::new("git")
+        .args(["clone", &clone.url, &clone.destination])
+        .output()
+        .map_err(DottyError::IoError)?;
+
+    if output.status.success() {
+        println!("{} {}", "[CLONED]".green().bold(), clone.destination);
+        Ok(())
+    } else {
+        Err(DottyError::CommandError {
+            command: format!("git clone {} {}", clone.url, clone.destination),
+            message: String::from_utf8_lossy(&output.stderr).to_string(),
+        })
+    }
+}
+
+fn run_copy(copy: &Copy) -> Result<(), DottyError> {
+    use crate::utils::{Absolute, ExpandTilde};
+
+    let source = copy.source.expand_tilde_path()?.absolute()?;
+    let destination = copy.destination.expand_tilde_path()?.absolute()?;
+
+    if !source.exists() {
+        println!(
+            "{} {} was not found, skipping.",
+            "[IGNORED]".yellow().bold(),
+            source.display()
+        );
+        return Ok(());
+    }
+
+    std::fs::copy(&source, &destination).map_err(DottyError::IoError)?;
+    println!(
+        "{} {} -> {}",
+        "[COPIED]".green().bold(),
+        source.display(),
+        destination.display()
+    );
+    Ok(())
+}
+
+fn run_chmod(chmod: &Chmod) -> Result<(), DottyError> {
+    use crate::utils::{Absolute, ExpandTilde};
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = chmod.path.expand_tilde_path()?.absolute()?;
+    let mode = u32::from_str_radix(&chmod.mode, 8).map_err(|_| DottyError::CommandError {
+        command: format!("chmod {} {}", chmod.mode, path.display()),
+        message: format!("invalid mode '{}'", chmod.mode),
+    })?;
+
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
+        .map_err(DottyError::IoError)?;
+
+    println!(
+        "{} {} ({})",
+        "[CHMOD]".green().bold(),
+        path.display(),
+        chmod.mode
+    );
+    Ok(())
 }
 
 #[cfg(test)]

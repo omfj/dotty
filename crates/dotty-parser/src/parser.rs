@@ -21,6 +21,18 @@ pub enum Node {
         source: String,
         destination: String,
     },
+    Clone {
+        url: String,
+        destination: String,
+    },
+    Copy {
+        source: String,
+        destination: String,
+    },
+    Chmod {
+        path: String,
+        mode: String,
+    },
     Do {
         command: String,
         shell: String,
@@ -96,6 +108,9 @@ impl<TS: TokenStream> Parser<TS> {
         while let Some(token) = &self.current_token {
             match token {
                 Token::Link => self.handle_link(&mut nodes)?,
+                Token::Clone => self.handle_clone(&mut nodes)?,
+                Token::Copy => self.handle_copy(&mut nodes)?,
+                Token::Chmod => self.handle_chmod(&mut nodes)?,
                 Token::Do => self.handle_do(&mut nodes)?,
                 Token::If => self.handle_if(&mut nodes)?,
                 Token::Print => self.handle_print(&mut nodes)?,
@@ -127,6 +142,9 @@ impl<TS: TokenStream> Parser<TS> {
             match token {
                 Token::Identifier(_) => self.handle_assignment(&mut nodes)?,
                 Token::Link => self.handle_link(&mut nodes)?,
+                Token::Clone => self.handle_clone(&mut nodes)?,
+                Token::Copy => self.handle_copy(&mut nodes)?,
+                Token::Chmod => self.handle_chmod(&mut nodes)?,
                 Token::Do => self.handle_do(&mut nodes)?,
                 Token::If => self.handle_if(&mut nodes)?,
                 Token::Print => self.handle_print(&mut nodes)?,
@@ -325,6 +343,41 @@ impl<TS: TokenStream> Parser<TS> {
         Ok(())
     }
 
+    fn handle_clone(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
+        let line = self.current_line;
+        self.consume();
+        let url = self.expect_string()?;
+        self.expect_token(lexer::Token::To)?;
+        let destination = self
+            .expect_string()
+            .map_err(|_| anyhow::anyhow!("line {}: clone destination must be a string", line))?;
+        nodes.push(Node::Clone { url, destination });
+        Ok(())
+    }
+
+    fn handle_copy(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
+        let line = self.current_line;
+        self.consume();
+        let source = self.expect_string()?;
+        self.expect_token(lexer::Token::To)?;
+        let destination = self
+            .expect_string()
+            .map_err(|_| anyhow::anyhow!("line {}: copy destination must be a string", line))?;
+        nodes.push(Node::Copy {
+            source,
+            destination,
+        });
+        Ok(())
+    }
+
+    fn handle_chmod(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
+        self.consume();
+        let path = self.expect_string()?;
+        let mode = self.expect_string()?;
+        nodes.push(Node::Chmod { path, mode });
+        Ok(())
+    }
+
     fn handle_do(&mut self, nodes: &mut Vec<Node>) -> anyhow::Result<()> {
         self.consume();
 
@@ -358,11 +411,18 @@ impl<TS: TokenStream> Parser<TS> {
 
         let condition = self.parse_condition()?;
         let true_branch = self.parse_block()?;
-        let false_branch = if let Some(lexer::Token::Else) = &self.current_token {
-            self.consume();
-            self.parse_block()?
-        } else {
-            Vec::new()
+        let false_branch = match &self.current_token {
+            Some(lexer::Token::Else) => {
+                self.consume();
+                self.parse_block()?
+            }
+            Some(lexer::Token::ElseIf) => {
+                self.current_token = Some(lexer::Token::If);
+                let mut branch = Vec::new();
+                self.handle_if(&mut branch)?;
+                branch
+            }
+            _ => Vec::new(),
         };
 
         nodes.push(Node::If {
@@ -588,6 +648,64 @@ mod tests {
                     value: Value::String("hosts/mac".to_string()),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn it_parses_else_if() {
+        let token_stream: TokenList = vec![
+            Token::If,
+            Token::Identifier("os".to_string()),
+            Token::Is,
+            Token::String("linux".to_string()),
+            Token::LeftBrace,
+            Token::Do,
+            Token::String("echo 'Linux!'".to_string()),
+            Token::RightBrace,
+            Token::ElseIf,
+            Token::Identifier("os".to_string()),
+            Token::Is,
+            Token::String("macos".to_string()),
+            Token::LeftBrace,
+            Token::Do,
+            Token::String("echo 'macOS!'".to_string()),
+            Token::RightBrace,
+            Token::Else,
+            Token::LeftBrace,
+            Token::Do,
+            Token::String("echo 'Other!'".to_string()),
+            Token::RightBrace,
+        ]
+        .into();
+
+        let nodes = Parser::from_stream(token_stream).parse().unwrap();
+
+        assert_eq!(
+            nodes,
+            vec![Node::If {
+                condition: Box::new(Node::Is {
+                    left: Box::new(Node::Variable("os".to_string())),
+                    right: Box::new(Node::Literal(Value::String("linux".to_string()))),
+                }),
+                true_branch: vec![Node::Do {
+                    command: "echo 'Linux!'".to_string(),
+                    shell: DEFAULT_SHELL.to_string(),
+                }],
+                false_branch: vec![Node::If {
+                    condition: Box::new(Node::Is {
+                        left: Box::new(Node::Variable("os".to_string())),
+                        right: Box::new(Node::Literal(Value::String("macos".to_string()))),
+                    }),
+                    true_branch: vec![Node::Do {
+                        command: "echo 'macOS!'".to_string(),
+                        shell: DEFAULT_SHELL.to_string(),
+                    }],
+                    false_branch: vec![Node::Do {
+                        command: "echo 'Other!'".to_string(),
+                        shell: DEFAULT_SHELL.to_string(),
+                    }],
+                }],
+            }]
         );
     }
 

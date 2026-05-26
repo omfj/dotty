@@ -6,6 +6,9 @@ const EXISTS_KEYWORD: &str = "exists";
 const DO_KEYWORD: &str = "do";
 const TEST_KEYWORD: &str = "test";
 const PRINT_KEYWORD: &str = "print";
+const CLONE_KEYWORD: &str = "clone";
+const COPY_KEYWORD: &str = "copy";
+const CHMOD_KEYWORD: &str = "chmod";
 
 const TO_OPERATOR: &str = "to";
 const NOT_OPERATOR: &str = "not";
@@ -43,6 +46,9 @@ pub(crate) enum Token {
     Not,
     Test,
     Print,
+    Clone,
+    Copy,
+    Chmod,
 
     String(String),
     Identifier(String),
@@ -67,6 +73,9 @@ impl TryFrom<&str> for Token {
             NOT_OPERATOR => Ok(Token::Not),
             TEST_KEYWORD => Ok(Token::Test),
             PRINT_KEYWORD => Ok(Token::Print),
+            CLONE_KEYWORD => Ok(Token::Clone),
+            COPY_KEYWORD => Ok(Token::Copy),
+            CHMOD_KEYWORD => Ok(Token::Chmod),
             _ => Err(anyhow::anyhow!("Unknown token: {}", value)),
         }
     }

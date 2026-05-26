@@ -54,11 +54,32 @@ impl From<Action> for Step {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Clone {
+    pub url: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Copy {
+    pub source: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Chmod {
+    pub path: String,
+    pub mode: String,
+}
+
 #[derive(Debug)]
 pub enum Step {
     Link(Link),
     Action(Action),
     CreateDir(String),
+    Clone(Clone),
+    Copy(Copy),
+    Chmod(Chmod),
 }
 
 pub struct Environment {
@@ -153,12 +174,45 @@ impl Interpreter {
                 } => {
                     let destination = self.interpolate(&destination)?;
                     if let Some(parent) = std::path::Path::new(&destination).parent()
-                        && !parent.as_os_str().is_empty() && !parent.exists() {
-                            steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
-                        }
+                        && !parent.as_os_str().is_empty()
+                        && !parent.exists()
+                    {
+                        steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
+                    }
                     steps.push(Step::Link(Link {
                         source: self.interpolate(&source)?,
                         destination,
+                    }));
+                }
+                parser::Node::Clone { url, destination } => {
+                    let destination = self.interpolate(&destination)?;
+                    if let Some(parent) = std::path::Path::new(&destination).parent()
+                        && !parent.as_os_str().is_empty() && !parent.exists() {
+                            steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
+                        }
+                    steps.push(Step::Clone(Clone {
+                        url: self.interpolate(&url)?,
+                        destination,
+                    }));
+                }
+                parser::Node::Copy {
+                    source,
+                    destination,
+                } => {
+                    let destination = self.interpolate(&destination)?;
+                    if let Some(parent) = std::path::Path::new(&destination).parent()
+                        && !parent.as_os_str().is_empty() && !parent.exists() {
+                            steps.push(Step::CreateDir(parent.to_string_lossy().into_owned()));
+                        }
+                    steps.push(Step::Copy(Copy {
+                        source: self.interpolate(&source)?,
+                        destination,
+                    }));
+                }
+                parser::Node::Chmod { path, mode } => {
+                    steps.push(Step::Chmod(Chmod {
+                        path: self.interpolate(&path)?,
+                        mode,
                     }));
                 }
                 parser::Node::Do { command, shell } => {
